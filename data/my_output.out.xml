@@ -1,0 +1,6 @@
+
+<additional>
+<edgeData id="d1" type='amitran' freq='500' excludeEmpty='true' file="amitran_data.xml"/>
+<edgeData id="d2" freq='500' file="edge_data.xml"/>
+</additional>
+
