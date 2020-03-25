@@ -41,16 +41,20 @@ def flows_to_tensor(flows):
   )
 
 
+le_trips = preprocessing.LabelEncoder()
+
+
 def trips_to_tensor(data):
   # only_origins = data[['x_from', 'y_from', 'x_to', 'y_to']].drop_duplicates().sort_values(by=['x_from', 'y_from', 'x_to', 'y_to'])
 
   data['cell_from'] =  data['x_from'].astype(str).str.cat(data['y_from'].astype(str), sep="_")
   data['cell_to'] =  data['x_to'].astype(str).str.cat(data['y_to'].astype(str), sep="_")
   data['code'] = data['cell_from'].astype(str).str.cat(data['cell_to'].astype(str), sep="_")
-
-  le_cells = preprocessing.LabelEncoder()
-  le_cells.fit(data['code'].values)
-  data['code_encoded'] = le_cells.transform(data['code'])
+  trips_hist = data.groupby('code')['sim_id'].count()
+  threshold = trips_hist.quantile(0.95)
+  trips_interested = np.array(trips_hist[trips_hist > threshold].index)
+  data = data[data['code'].isin(trips_interested)]
+  data['code_encoded'] = le_trips.fit_transform(data['code'])
   trips_per_sim = data.groupby(['sim_id', 'code_encoded']).size().reset_index()
   return sparse.COO(
       np.transpose(trips_per_sim[['sim_id', 'code_encoded']].values),
@@ -180,3 +184,27 @@ model_final.save_weights('model_final.h5')
 trips_predicted = model_final.predict(data_test)
 
 print("Quality on the test set:", sqrt(mean_squared_error(trips_predicted, labels_test)))
+
+
+def tensor_to_trips(data):
+    """
+    Transforms numpy array with predictions to a convinient pandas dataframe
+
+    Args:
+      data: numpy array with predictions
+    Returns:
+      dataframe with the header: [sim_id, x_from, y_from, x_to, y_to]
+    """
+
+    dataset = []
+    codes = le_trips.inverse_transform(range(data.shape[1]))
+    for sim_id in range(data.shape[0]):
+        for cell in range(data.shape[1]):
+            code = codes[cell]
+            x_from, y_from, x_to, y_to = code.split('_')
+            number = int(data[sim_id, cell])
+            for i in range(number):
+                dataset.append([sim_id, x_from, y_from, x_to, y_to])
+    return pd.DataFrame(dataset, columns=['sim_id', 'x_from', 'y_from', 'x_to', 'y_to'])
+
+tensor_to_trips(trips_predicted).to_csv('trips_predicted.csv')
